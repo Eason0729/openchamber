@@ -5,11 +5,14 @@ import {
   buildResult,
   toUsageWindow,
   toNumber,
+  discoverBrowserCookie
 } from '../utils/index.js';
 
 export const providerId = 'opencode-go';
 export const providerName = 'OpenCode';
 export const aliases = ['opencode-go', 'opencode_go', 'opencodego'];
+
+const hostPattern = /\.opencode\.ai$/;
 
 export const isConfigured = () => {
   const auth = readAuthFile();
@@ -21,9 +24,9 @@ export const fetchQuota = async () => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   const workspaceId = process.env.OPENCODE_GO_WORKSPACE_ID;
-  const explicitCookie = process.env.OPENCODE_GO_AUTH_COOKIE;
+  const authCookie = process.env.OPENCODE_GO_AUTH_COOKIE || discoverBrowserCookie(hostPattern);
 
-  if (!workspaceId || !explicitCookie) {
+  if (!workspaceId || !authCookie) {
     return buildResult({
       providerId,
       providerName,
@@ -38,7 +41,7 @@ export const fetchQuota = async () => {
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        Cookie: `auth=${explicitCookie}`,
+        Cookie: `auth=${authCookie}`,
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:148.0) Gecko/20100101 Firefox/148.0',
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
