@@ -1,8 +1,7 @@
 import { readAuthFile } from '../../opencode/auth.js';
 import {
-  getAuthEntry,
-  normalizeAuthEntry,
   buildResult,
+  resolveAuthEntry,
   toUsageWindow,
   toNumber,
   toTimestamp,
@@ -16,14 +15,12 @@ export const providerName = 'z.ai';
 export const aliases = ['zai-coding-plan', 'zai', 'z.ai'];
 
 export const isConfigured = () => {
-  const auth = readAuthFile();
-  const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
+  const entry = resolveAuthEntry(readAuthFile(), aliases);
   return Boolean(entry?.key || entry?.token);
 };
 
 export const fetchQuota = async () => {
-  const auth = readAuthFile();
-  const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
+  const entry = resolveAuthEntry(readAuthFile(), aliases);
   const apiKey = entry?.key ?? entry?.token;
 
   if (!apiKey) {

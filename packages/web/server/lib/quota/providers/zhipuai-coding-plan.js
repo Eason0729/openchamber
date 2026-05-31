@@ -26,11 +26,9 @@
  * @property {Array<{modelCode: string, usage: number}>} [usageDetails]
  */
 import { readAuthFile } from '../../opencode/auth.js';
-import { readConfigLayers } from '../../opencode/shared.js';
 import {
-  getAuthEntry,
-  normalizeAuthEntry,
   buildResult,
+  resolveAuthEntry,
   toUsageWindow,
   resolveWindowSeconds,
   normalizeTimestamp
@@ -41,28 +39,8 @@ export const providerName = 'Zhipu AI Coding Plan';
 export const aliases = ['zhipuai-coding-plan', 'zhipuai', 'zhipu'];
 
 function getApiKey() {
-  const auth = readAuthFile();
-  const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
-  const apiKeyFromAuth = entry?.key ?? entry?.token;
-
-  if (apiKeyFromAuth) {
-    return apiKeyFromAuth;
-  }
-
-  try {
-    const { mergedConfig } = readConfigLayers();
-
-    for (const alias of aliases) {
-      const providerConfig = mergedConfig?.provider?.[alias];
-      if (providerConfig?.options?.apiKey) {
-        return providerConfig.options.apiKey;
-      }
-    }
-  } catch {
-    // Ignore config read errors; the provider will be treated as not configured.
-  }
-
-  return null;
+  const entry = resolveAuthEntry(readAuthFile(), aliases);
+  return entry?.key ?? entry?.token ?? entry?.apiKey ?? null;
 }
 
 export const isConfigured = () => {

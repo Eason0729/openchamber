@@ -1,8 +1,7 @@
 import { readAuthFile } from '../../opencode/auth.js';
 import {
-  getAuthEntry,
-  normalizeAuthEntry,
   buildResult,
+  resolveAuthEntry,
   toUsageWindow,
   toNumber,
   toTimestamp,
@@ -14,14 +13,12 @@ export const providerName = 'Codex';
 export const aliases = ['openai', 'codex', 'chatgpt'];
 
 export const isConfigured = () => {
-  const auth = readAuthFile();
-  const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
+  const entry = resolveAuthEntry(readAuthFile(), aliases);
   return Boolean(entry?.access || entry?.token);
 };
 
 export const fetchQuota = async () => {
-  const auth = readAuthFile();
-  const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
+  const entry = resolveAuthEntry(readAuthFile(), aliases);
   const accessToken = entry?.access ?? entry?.token;
   const accountId = entry?.accountId;
 

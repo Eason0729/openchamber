@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { readConfigLayers } from '../../opencode/shared.js';
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
@@ -43,4 +44,22 @@ export const normalizeAuthEntry = (entry) => {
     return entry;
   }
   return null;
+};
+
+export const resolveAuthEntry = (auth, aliases) => {
+  const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
+
+  try {
+    const { mergedConfig } = readConfigLayers();
+    for (const alias of aliases) {
+      const providerConfig = mergedConfig?.provider?.[alias];
+      if (providerConfig?.options && typeof providerConfig.options === 'object') {
+        return Object.assign({}, entry ?? {}, providerConfig.options);
+      }
+    }
+  } catch {
+    // Ignore config read errors; auth-only fallback still works.
+  }
+
+  return entry;
 };
