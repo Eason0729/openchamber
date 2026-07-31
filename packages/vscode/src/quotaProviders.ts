@@ -492,6 +492,11 @@ export const listConfiguredQuotaProviders = () => {
     configured.add('neuralwatt');
   }
 
+  const xaiAuth = normalizeAuthEntry(getAuthEntry(auth, ['xai']));
+  if (xaiAuth && (xaiAuth as Record<string, unknown>).type === 'oauth' && (xaiAuth as Record<string, unknown>).access) {
+    configured.add('xai');
+  }
+
   return Array.from(configured);
 };
 
@@ -2175,6 +2180,163 @@ const fetchCrofQuota = async (): Promise<ProviderResult> => {
   }
 };
 
+const XAI_USERINFO_URL = 'https://auth.x.ai/oauth2/userinfo';
+const XAI_BILLING_URL = 'https://cli-chat-proxy.grok.com/v1/billing?format=credits';
+
+const fetchXaiQuota = async (): Promise<ProviderResult> => {
+  const auth = readAuthFile();
+  const entry = normalizeAuthEntry(getAuthEntry(auth, ['xai'])) as Record<string, unknown> | null;
+
+  if (!entry || entry.type !== 'oauth' || !entry.access) {
+    return buildResult({
+      providerId: 'xai',
+      providerName: 'xAI (Grok)',
+      ok: false,
+      configured: false,
+      error: 'Not configured',
+    });
+  }
+
+  const accessToken = entry.access as string;
+  const timeoutSignal = AbortSignal.timeout(15_000);
+
+  try {
+    const userinfoResponse = await fetch(XAI_USERINFO_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+      },
+      signal: timeoutSignal,
+    });
+
+    if (!userinfoResponse.ok) {
+      return buildResult({
+        providerId: 'xai',
+        providerName: 'xAI (Grok)',
+        ok: false,
+        configured: true,
+        error: `xAI userinfo error: ${userinfoResponse.status}`,
+      });
+    }
+
+    const userinfo = await userinfoResponse.json() as { sub?: unknown };
+    const userId = asNonEmptyString(userinfo?.sub);
+    if (!userId) {
+      return buildResult({
+        providerId: 'xai',
+        providerName: 'xAI (Grok)',
+        ok: false,
+        configured: true,
+        error: 'xAI userinfo response missing sub',
+      });
+    }
+
+    const response = await fetch(XAI_BILLING_URL, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'x-userid': userId,
+        'X-XAI-Token-Auth': 'xai-grok-cli',
+        'x-grok-client-mode': 'interactive',
+        Accept: 'application/json',
+      },
+      signal: timeoutSignal,
+    });
+
+    if (!response.ok) {
+      return buildResult({
+        providerId: 'xai',
+        providerName: 'xAI (Grok)',
+        ok: false,
+        configured: true,
+        error: `API error: ${response.status}`,
+      });
+    }
+
+    const payload = await response.json() as {
+      config?: {
+        creditUsagePercent?: number;
+        currentPeriod?: { type?: string; end?: string };
+        monthlyLimit?: { val?: number };
+        used?: { val?: number };
+        onDemandCap?: { val?: number };
+        onDemandUsed?: { val?: number };
+        prepaidBalance?: { val?: number };
+        billingPeriodEnd?: string;
+      };
+    };
+    const config = payload?.config ?? {};
+
+    const creditUsagePercent = typeof config.creditUsagePercent === 'number'
+      ? config.creditUsagePercent
+      : null;
+    const limit = config.monthlyLimit?.val ?? null;
+    const used = config.used?.val ?? null;
+
+    let usedPercent = creditUsagePercent;
+    if (usedPercent === null && limit !== null && limit > 0 && used !== null) {
+      usedPercent = Math.min(100, (used / limit) * 100);
+    }
+
+    const period = config.currentPeriod ?? {};
+    const periodType = period.type ?? null;
+    const resetAt = toTimestamp(period.end) ?? toTimestamp(config.billingPeriodEnd) ?? null;
+
+    const onDemandCap = config.onDemandCap?.val ?? null;
+    const onDemandUsed = config.onDemandUsed?.val ?? null;
+    const prepaidBalance = config.prepaidBalance?.val ?? null;
+
+    const windowKey =
+      typeof periodType === 'string' && periodType.includes('WEEKLY') ? 'weekly'
+      : typeof periodType === 'string' && periodType.includes('MONTHLY') ? 'monthly'
+      : 'credits';
+
+    const labelParts: string[] = [];
+    if (typeof usedPercent === 'number') {
+      labelParts.push(`${Math.floor(usedPercent)}%`);
+    }
+    if (onDemandCap !== null && onDemandCap > 0 && onDemandUsed !== null) {
+      labelParts.push(`on-demand ${Math.floor(Math.min(100, (onDemandUsed / onDemandCap) * 100))}%`);
+    }
+    if (prepaidBalance !== null && prepaidBalance !== 0) {
+      labelParts.push(`$${(prepaidBalance / 100).toFixed(2)} prepaid`);
+    }
+    const valueLabel = labelParts.length > 0 ? labelParts.join(' · ') : null;
+
+    const windows: Record<string, UsageWindow> = {
+      [windowKey]: toUsageWindow({
+        usedPercent,
+        windowSeconds: null,
+        resetAt,
+        valueLabel,
+      }),
+    };
+
+    return buildResult({
+      providerId: 'xai',
+      providerName: 'xAI (Grok)',
+      ok: true,
+      configured: true,
+      usage: { windows },
+    });
+  } catch (error) {
+    const isTimeout = error instanceof DOMException && error.name === 'AbortError' && timeoutSignal.aborted;
+    const isParseError = error instanceof SyntaxError;
+    return buildResult({
+      providerId: 'xai',
+      providerName: 'xAI (Grok)',
+      ok: false,
+      configured: true,
+      error: isTimeout
+        ? 'Request timed out'
+        : isParseError
+          ? 'Invalid response from provider'
+          : (error instanceof Error ? error.message : 'Request failed'),
+    });
+  }
+};
+
 export const fetchQuotaForProvider = async (providerId: string): Promise<ProviderResult> => {
   switch (providerId) {
     case 'claude':
@@ -2220,6 +2382,8 @@ export const fetchQuotaForProvider = async (providerId: string): Promise<Provide
       return fetchCrofQuota();
     case 'neuralwatt':
       return fetchNeuralwattQuota();
+    case 'xai':
+      return fetchXaiQuota();
     default:
       return buildResult({
         providerId,

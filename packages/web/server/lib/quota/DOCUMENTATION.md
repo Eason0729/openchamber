@@ -34,6 +34,7 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `wafer` | Wafer.ai | `providers/wafer.js` | `wafer`, `wafer-ai`, `wafer_ai`, `wafer.ai` |
 | `opencode-go` | OpenCode Go | `providers/opencode-go.js` | Manual workspace ID and auth cookie stored under `~/.config/openchamber/quota/` |
 | `neuralwatt` | NeuralWatt | `providers/neuralwatt.js` | `neuralwatt` (API key under `key` or `token`) |
+| `xai` | xAI (Grok) | `providers/xai.js` | `xai` (OAuth entry only — `type:"oauth"` with `access`; API-key entries are hidden) |
 
 ## Internal-only provider module
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
